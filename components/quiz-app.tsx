@@ -200,6 +200,7 @@ export function QuizApp() {
                   <LatexText
                     text={paragraphText}
                     className="block text-base leading-relaxed text-slate-700 dark:text-slate-200"
+                    enableUnderscoreItalics={section === "english"}
                   />
                 </div>
               ) : null}
@@ -207,6 +208,7 @@ export function QuizApp() {
               <LatexText
                 text={question.question.question}
                 className="block text-base leading-relaxed font-medium text-slate-900 dark:text-slate-100"
+                enableUnderscoreItalics={section === "english"}
               />
             </div>
 
@@ -226,7 +228,12 @@ export function QuizApp() {
                     } ${checkState !== "idle" ? "opacity-85" : ""}`}
                   >
                     <span className="mr-2 font-semibold">{letter}.</span>
-                    <LatexText text={text} preferMath="aggressive" className="inline text-slate-900 dark:text-slate-100" />
+                    <LatexText
+                      text={text}
+                      preferMath="aggressive"
+                      className="inline text-slate-900 dark:text-slate-100"
+                      enableUnderscoreItalics={section === "english"}
+                    />
                   </button>
                 )
               })}
@@ -244,6 +251,7 @@ export function QuizApp() {
                 <LatexText
                   text={question.question.explanation}
                   className="block leading-relaxed text-slate-900 dark:text-slate-100"
+                  enableUnderscoreItalics={section === "english"}
                 />
               </div>
             )}

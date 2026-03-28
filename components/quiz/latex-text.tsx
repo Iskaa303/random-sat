@@ -6,6 +6,7 @@ type LatexTextProps = {
   text: string
   className?: string
   preferMath?: "auto" | "aggressive"
+  enableUnderscoreItalics?: boolean
 }
 
 function looksLikeBareMath(value: string) {
@@ -26,6 +27,8 @@ function looksLikeMathFragment(value: string) {
 function normalizeOpenSatText(input: string, preferMath: "auto" | "aggressive") {
   let normalized = input.replace(/\r\n/g, "\n")
   normalized = normalized.replace(/−/g, "-")
+  normalized = normalized.replace(/\\\\\"/g, "\"")
+  normalized = normalized.replace(/\\"/g, "\"")
 
   const preservedMath: string[] = []
   normalized = normalized.replace(/\$[^$]+\$/g, (match) => {
@@ -42,6 +45,32 @@ function normalizeOpenSatText(input: string, preferMath: "auto" | "aggressive") 
     const trimmed = expr.trim()
     return looksLikeMathFragment(trimmed) ? `$${trimmed}$` : trimmed
   })
+
+  // Render standalone LaTeX environments in passages/explanations.
+  // For align, strip the environment and render as regular latex text.
+  normalized = normalized.replace(
+    /\\begin\{align\*?\}([\s\S]*?)\\end\{align\*?\}/g,
+    (_match: string, body: string) => {
+      const inlineBody = body
+        .split("\\\\")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join(" \\quad ")
+
+      return `$${inlineBody}$`
+    }
+  )
+
+  normalized = normalized.replace(
+    /\\begin\{([a-zA-Z*]+)\}[\s\S]*?\\end\{\1\}/g,
+    (envBlock: string) => {
+      // If a math environment is still present without delimiters, wrap it for KaTeX.
+      if (envBlock.includes("$$")) {
+        return envBlock
+      }
+      return `$$${envBlock}$$`
+    }
+  )
 
   // Fix duplicated equations/functions in some explanations, e.g. f(x)=...f(x)=... or f(x)f(x).
   normalized = normalized.replace(
@@ -84,8 +113,34 @@ function normalizeOpenSatText(input: string, preferMath: "auto" | "aggressive") 
   return normalized
 }
 
-export function LatexText({ text, className, preferMath = "auto" }: LatexTextProps) {
+export function LatexText({
+  text,
+  className,
+  preferMath = "auto",
+  enableUnderscoreItalics = false,
+}: LatexTextProps) {
   const normalizedText = normalizeOpenSatText(text, preferMath)
+
+  if (enableUnderscoreItalics && normalizedText.includes("_")) {
+    const parts = normalizedText.split(/(_[^_]+_)/g).filter(Boolean)
+
+    return (
+      <span className={className}>
+        {parts.map((part, index) => {
+          if (part.startsWith("_") && part.endsWith("_")) {
+            const italicText = part.slice(2, -2)
+            return (
+              <em key={`italic-${index}`}>
+                <Latex>{italicText}</Latex>
+              </em>
+            )
+          }
+
+          return <Latex key={`text-${index}`}>{part}</Latex>
+        })}
+      </span>
+    )
+  }
 
   return (
     <span className={className}>
