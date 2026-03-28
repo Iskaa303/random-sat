@@ -26,15 +26,20 @@ export type OpenSatQuery = {
 export async function getOpenSatQuestions(query: OpenSatQuery = {}): Promise<OpenSatQuestion[]> {
   const section = (query.section ?? "english").trim().toLowerCase()
   const domain = (query.domain ?? "any").trim().toLowerCase()
-  const limit = Math.max(1, Math.min(query.limit ?? 1, 20))
+  const normalizedLimit =
+    typeof query.limit === "number" && Number.isFinite(query.limit)
+      ? Math.max(1, Math.min(query.limit, 100))
+      : undefined
 
   const params = new URLSearchParams({
     section,
-    limit: String(limit),
   })
 
   if (domain && domain !== "any") {
     params.set("domain", domain)
+  }
+  if (normalizedLimit) {
+    params.set("limit", String(normalizedLimit))
   }
 
   const url = `${OPENSAT_URL}?${params.toString()}`

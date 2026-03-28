@@ -13,7 +13,6 @@ import type { OpenSatQuestion } from "@/lib/opensat"
 async function requestQuestion(filters: { section: string; domain: string }) {
   const params = new URLSearchParams({
     section: filters.section,
-    limit: "1",
   })
 
   if (filters.domain !== "any") {
@@ -41,7 +40,6 @@ export function QuizApp() {
   const [checkState, setCheckState] = useState<CheckState>("idle")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showExplanation, setShowExplanation] = useState(false)
   const [isDark, setIsDark] = useState(false)
   const [hydrated, setHydrated] = useState(false)
 
@@ -64,7 +62,6 @@ export function QuizApp() {
       setQuestion(nextQuestion)
       setSelectedChoice("")
       setCheckState("idle")
-      setShowExplanation(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unexpected error")
     } finally {
@@ -86,7 +83,6 @@ export function QuizApp() {
       setQuestion(persisted.question)
       setSelectedChoice(persisted.selectedChoice)
       setCheckState(persisted.checkState)
-      setShowExplanation(persisted.showExplanation)
       setIsDark(persisted.isDark)
       applyTheme(persisted.isDark)
       setLoading(false)
@@ -101,7 +97,6 @@ export function QuizApp() {
         setQuestion(nextQuestion)
         setSelectedChoice("")
         setCheckState("idle")
-        setShowExplanation(false)
         setError(null)
       })
       .catch((err: unknown) => {
@@ -123,10 +118,9 @@ export function QuizApp() {
       question,
       selectedChoice,
       checkState,
-      showExplanation,
       isDark,
     })
-  }, [section, domain, question, selectedChoice, checkState, showExplanation, isDark, hydrated])
+  }, [section, domain, question, selectedChoice, checkState, isDark, hydrated])
 
   useEffect(() => {
     if (!availableDomains.some((item) => item.value === domain)) {
@@ -199,8 +193,17 @@ export function QuizApp() {
                 {section} • {question.domain}
               </p>
               {paragraphText ? (
-                <LatexText text={paragraphText} className="block leading-relaxed text-slate-700 dark:text-slate-200" />
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                  <p className="mb-2 text-xs tracking-[0.16em] text-slate-500 uppercase dark:text-slate-300">
+                    Passage
+                  </p>
+                  <LatexText
+                    text={paragraphText}
+                    className="block text-base leading-relaxed text-slate-700 dark:text-slate-200"
+                  />
+                </div>
               ) : null}
+              <p className="text-xs tracking-[0.16em] text-slate-500 uppercase dark:text-slate-300">Question</p>
               <LatexText
                 text={question.question.question}
                 className="block text-base leading-relaxed font-medium text-slate-900 dark:text-slate-100"
@@ -238,16 +241,10 @@ export function QuizApp() {
             {checkState === "incorrect" && (
               <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
                 <p>Not quite. Review the explanation and then continue.</p>
-                {!showExplanation ? (
-                  <Button variant="secondary" onClick={() => setShowExplanation(true)}>
-                    Show explanation
-                  </Button>
-                ) : (
-                  <LatexText
-                    text={question.question.explanation}
-                    className="block leading-relaxed text-slate-900 dark:text-slate-100"
-                  />
-                )}
+                <LatexText
+                  text={question.question.explanation}
+                  className="block leading-relaxed text-slate-900 dark:text-slate-100"
+                />
               </div>
             )}
           </>
@@ -276,7 +273,7 @@ export function QuizApp() {
             <Button
               key={option.value}
               size="sm"
-              variant={domain === option.value ? "secondary" : "outline"}
+              variant={domain === option.value ? "default" : "outline"}
               onClick={() => setDomain(option.value)}
             >
               {option.label}
@@ -286,18 +283,18 @@ export function QuizApp() {
 
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={shuffleFiltersAndQuestion} disabled={loading}>
-            Shuffle filters
+            Shuffle Filters
           </Button>
           <Button variant="outline" onClick={() => fetchRandomQuestion()} disabled={loading}>
-            Random question
+            Get Random Question
           </Button>
           {checkState === "idle" ? (
             <Button onClick={checkAnswer} disabled={!selectedChoice || loading || !!error}>
-              Check answer
+              Check My Answer
             </Button>
           ) : (
             <Button onClick={() => fetchRandomQuestion()} disabled={loading}>
-              Next question
+              Next Question
             </Button>
           )}
         </div>

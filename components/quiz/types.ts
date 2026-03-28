@@ -12,6 +12,5 @@ export type PersistedQuizState = {
   question: OpenSatQuestion | null
   selectedChoice: string
   checkState: CheckState
-  showExplanation: boolean
   isDark: boolean
 }

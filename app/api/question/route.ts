@@ -8,8 +8,9 @@ app.get("*", async (c) => {
   try {
     const section = c.req.query("section") ?? "english"
     const domain = c.req.query("domain") ?? "any"
-    const parsedLimit = Number(c.req.query("limit") ?? "1")
-    const limit = Number.isFinite(parsedLimit) ? parsedLimit : 1
+    const limitQuery = c.req.query("limit")
+    const parsedLimit = limitQuery ? Number(limitQuery) : undefined
+    const limit = parsedLimit !== undefined && Number.isFinite(parsedLimit) ? parsedLimit : undefined
 
     const question = await getRandomOpenSatQuestion({
       section,
