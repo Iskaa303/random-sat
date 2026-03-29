@@ -1,14 +1,23 @@
-"use client"
+import { QuizApp } from "@/components/quiz-app"
+import { getRandomCollegeBoardQuestion } from "@/lib/collegeboard"
 
-import dynamic from "next/dynamic"
+export async function QuizShell() {
+  const initialQuestion = await getRandomCollegeBoardQuestion({
+    section: "english",
+    domain: "any",
+    skill: "any",
+    difficulty: "any",
+  })
 
-const QuizApp = dynamic(() => import("@/components/quiz-app").then((module) => module.QuizApp), {
-  ssr: false,
-  loading: () => (
-    <div className="h-140 w-full rounded-xl border border-slate-200 bg-white/70 dark:border-slate-700 dark:bg-slate-900/70" />
-  ),
-})
-
-export function QuizShell() {
-  return <QuizApp />
+  return (
+    <QuizApp
+      initialQuestion={initialQuestion}
+      initialFilters={{
+        section: "english",
+        domain: "any",
+        skill: "any",
+        difficulty: "any",
+      }}
+    />
+  )
 }

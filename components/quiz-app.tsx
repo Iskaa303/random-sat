@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { startTransition, useEffect, useMemo, useRef, useState } from "react"
 
 import { DIFFICULTY_OPTIONS, DOMAIN_OPTIONS, SECTION_OPTIONS, SKILL_OPTIONS } from "@/components/quiz/constants"
-import { loadQuizState, saveQuizState } from "@/components/quiz/storage"
-import type { CheckState, CollegeBoardQuestion, QuizSection } from "@/components/quiz/types"
+import { loadQuizPreferences, saveQuizPreferences } from "@/components/quiz/storage"
+import type { CheckState, CollegeBoardQuestion, QuizFilters, QuizSection } from "@/components/quiz/types"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 
 async function requestQuestion(filters: { section: string; domain: string; skill: string; difficulty: string }) {
   const params = new URLSearchParams({
@@ -38,18 +38,33 @@ async function requestQuestion(filters: { section: string; domain: string; skill
   return data.question
 }
 
-export function QuizApp() {
-  const [question, setQuestion] = useState<CollegeBoardQuestion | null>(null)
-  const [section, setSection] = useState<QuizSection>("english")
-  const [domain, setDomain] = useState<string>("any")
-  const [skill, setSkill] = useState<string>("any")
-  const [difficulty, setDifficulty] = useState<string>("any")
+function filtersAreEqual(left: QuizFilters, right: QuizFilters) {
+  return (
+    left.section === right.section &&
+    left.domain === right.domain &&
+    left.skill === right.skill &&
+    left.difficulty === right.difficulty
+  )
+}
+
+type QuizAppProps = {
+  initialQuestion: CollegeBoardQuestion
+  initialFilters: QuizFilters
+}
+
+export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
+  const [question, setQuestion] = useState<CollegeBoardQuestion | null>(initialQuestion)
+  const [section, setSection] = useState<QuizSection>(initialFilters.section)
+  const [domain, setDomain] = useState<string>(initialFilters.domain)
+  const [skill, setSkill] = useState<string>(initialFilters.skill)
+  const [difficulty, setDifficulty] = useState<string>(initialFilters.difficulty)
   const [selectedChoice, setSelectedChoice] = useState<string>("")
   const [checkState, setCheckState] = useState<CheckState>("idle")
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(false)
   const [hydrated, setHydrated] = useState(false)
+  const saveTimeoutRef = useRef<number | null>(null)
 
   const availableDomains = useMemo(() => DOMAIN_OPTIONS[section], [section])
   const availableSkills = useMemo(() => {
@@ -88,25 +103,35 @@ export function QuizApp() {
       (storedTheme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)
     applyTheme(initialDark)
 
-    const persisted = loadQuizState()
-    if (persisted) {
-      setSection(persisted.section)
-      setDomain(persisted.domain)
-      setSkill(persisted.skill || "any")
-      setDifficulty(persisted.difficulty || "any")
-      setQuestion(persisted.question)
-      setSelectedChoice(persisted.selectedChoice)
-      setCheckState(persisted.checkState)
-      setIsDark(persisted.isDark)
-      applyTheme(persisted.isDark)
-      setLoading(false)
+    const persisted = loadQuizPreferences()
+    if (!persisted) {
       setHydrated(true)
       return
     }
 
-    setHydrated(true)
+    applyTheme(persisted.isDark)
+
+    const nextFilters: QuizFilters = {
+      section: persisted.section,
+      domain: persisted.domain || "any",
+      skill: persisted.skill || "any",
+      difficulty: persisted.difficulty || "any",
+    }
+
+    startTransition(() => {
+      setSection(nextFilters.section)
+      setDomain(nextFilters.domain)
+      setSkill(nextFilters.skill)
+      setDifficulty(nextFilters.difficulty)
+    })
+
+    if (filtersAreEqual(nextFilters, initialFilters)) {
+      setHydrated(true)
+      return
+    }
+
     setLoading(true)
-    requestQuestion({ section: "english", domain: "any", skill: "any", difficulty: "any" })
+    requestQuestion(nextFilters)
       .then((nextQuestion) => {
         setQuestion(nextQuestion)
         setSelectedChoice("")
@@ -118,25 +143,52 @@ export function QuizApp() {
       })
       .finally(() => {
         setLoading(false)
+        setHydrated(true)
       })
-  }, [])
+  }, [initialFilters])
 
   useEffect(() => {
     if (!hydrated) {
       return
     }
 
-    saveQuizState({
-      section,
-      domain,
-      skill,
-      difficulty,
-      question,
-      selectedChoice,
-      checkState,
-      isDark,
-    })
-  }, [section, domain, skill, difficulty, question, selectedChoice, checkState, isDark, hydrated])
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current)
+    }
+
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveQuizPreferences({
+        section,
+        domain,
+        skill,
+        difficulty,
+        isDark,
+      })
+    }, 120)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current)
+        saveTimeoutRef.current = null
+      }
+    }
+  }, [section, domain, skill, difficulty, isDark, hydrated])
+
+  const choices = useMemo(() => {
+    if (!question || !question.answerOptions) return []
+    return question.answerOptions.map((option, index) => ({
+      letter: String.fromCharCode(65 + index), // A, B, C, D
+      text: option.content,
+      id: option.id
+    }))
+  }, [question])
+
+  const filterState: QuizFilters = {
+    section,
+    domain,
+    skill,
+    difficulty,
+  }
 
   useEffect(() => {
     if (!availableDomains.some((item) => item.value === domain)) {
@@ -149,15 +201,6 @@ export function QuizApp() {
       setSkill("any")
     }
   }, [availableSkills, skill])
-
-  const choices = useMemo(() => {
-    if (!question || !question.answerOptions) return []
-    return question.answerOptions.map((option, index) => ({
-      letter: String.fromCharCode(65 + index), // A, B, C, D
-      text: option.content,
-      id: option.id
-    }))
-  }, [question])
 
   const checkAnswer = () => {
     if (!question || !selectedChoice) {
@@ -194,9 +237,12 @@ export function QuizApp() {
     <Card className="w-full border-slate-200/70 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
       <CardHeader className="space-y-2">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-            Questions are official SAT questions from the Bluebook question bank.
-          </p>
+          <div className="space-y-1">
+            <CardTitle>Practice one SAT question at a time</CardTitle>
+            <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+              Questions come from the Bluebook question bank.
+            </p>
+          </div>
           <Button variant="outline" size="sm" onClick={() => applyTheme(!isDark)}>
             Switch to {isDark ? "light" : "dark"} theme
           </Button>
@@ -275,7 +321,7 @@ export function QuizApp() {
       </CardContent>
 
       <CardFooter className="flex-col items-stretch gap-4">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 [content-visibility:auto] [contain-intrinsic-size:42px]">
           {SECTION_OPTIONS.map((option) => (
             <Button
               key={option.value}
@@ -292,7 +338,7 @@ export function QuizApp() {
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 [content-visibility:auto] [contain-intrinsic-size:42px]">
           {availableDomains.map((option) => (
             <Button
               key={option.value}
@@ -308,7 +354,7 @@ export function QuizApp() {
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 [content-visibility:auto] [contain-intrinsic-size:42px]">
           {availableSkills.map((option) => (
             <Button
               key={option.value}
@@ -321,7 +367,7 @@ export function QuizApp() {
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 [content-visibility:auto] [contain-intrinsic-size:42px]">
           {DIFFICULTY_OPTIONS.map((option) => (
             <Button
               key={option.value}
@@ -338,7 +384,7 @@ export function QuizApp() {
           <Button variant="outline" onClick={shuffleFiltersAndQuestion} disabled={loading}>
             Shuffle Filters
           </Button>
-          <Button variant="outline" onClick={() => fetchRandomQuestion()} disabled={loading}>
+          <Button variant="outline" onClick={() => fetchRandomQuestion(filterState)} disabled={loading}>
             Get Random Question
           </Button>
           {checkState === "idle" ? (
@@ -346,7 +392,7 @@ export function QuizApp() {
               Check My Answer
             </Button>
           ) : (
-            <Button onClick={() => fetchRandomQuestion()} disabled={loading}>
+            <Button onClick={() => fetchRandomQuestion(filterState)} disabled={loading}>
               Next Question
             </Button>
           )}

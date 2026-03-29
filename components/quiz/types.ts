@@ -35,13 +35,13 @@ export type QuestionMetadata = {
   difficulty: string
 }
 
-export type PersistedQuizState = {
+export type QuizFilters = {
   section: QuizSection
   domain: string
   skill: string
   difficulty: string
-  question: CollegeBoardQuestion | null
-  selectedChoice: string
-  checkState: CheckState
+}
+
+export type PersistedQuizPreferences = QuizFilters & {
   isDark: boolean
 }

@@ -41,6 +41,7 @@ const API_GET_SINGLE = "https://qbank-api.collegeboard.org/msreportingquestionba
 
 const cachedIds: Map<string, QuestionMetadata[]> = new Map()
 const cachedQuestions: Map<string, CollegeBoardQuestion> = new Map()
+const ONE_DAY_IN_SECONDS = 60 * 60 * 24
 
 async function fetchQuestionIds(section: string): Promise<QuestionMetadata[]> {
   if (cachedIds.has(section)) return cachedIds.get(section)!
@@ -56,9 +57,13 @@ async function fetchQuestionIds(section: string): Promise<QuestionMetadata[]> {
 
   try {
     const response = await fetch(API_GET_IDS, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      next: {
+        revalidate: ONE_DAY_IN_SECONDS,
+        tags: [`collegeboard:ids:${section}`],
+      },
     })
     const data = await response.json()
     cachedIds.set(section, data)
@@ -75,9 +80,13 @@ async function fetchQuestion(externalId: string): Promise<CollegeBoardQuestion> 
 
   try {
     const response = await fetch(API_GET_SINGLE, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ external_id: externalId })
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ external_id: externalId }),
+      next: {
+        revalidate: ONE_DAY_IN_SECONDS,
+        tags: [`collegeboard:question:${externalId}`],
+      },
     })
     const question = await response.json()
     cachedQuestions.set(externalId, question)
