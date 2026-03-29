@@ -191,7 +191,7 @@ export function QuizApp() {
   }
 
   return (
-    <Card className="w-full border-slate-200/70 bg-white/90 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/90">
+    <Card className="w-full border-slate-200/70 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
       <CardHeader className="space-y-2">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
