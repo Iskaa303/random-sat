@@ -1,28 +1,34 @@
 "use client"
 
 import { startTransition, useEffect, useMemo, useRef, useState } from "react"
+import { usePathname, useRouter } from "next/navigation"
 
 import { DIFFICULTY_OPTIONS, DOMAIN_OPTIONS, SECTION_OPTIONS, SKILL_OPTIONS } from "@/components/quiz/constants"
-import { loadQuizPreferences, saveQuizPreferences } from "@/components/quiz/storage"
+import { loadQuestionProgress, loadQuizPreferences, saveQuestionProgress, saveQuizPreferences } from "@/components/quiz/storage"
 import type { CheckState, CollegeBoardQuestion, QuizFilters, QuizSection } from "@/components/quiz/types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { getQuestionPath } from "@/lib/quiz"
 
-async function requestQuestion(filters: { section: string; domain: string; skill: string; difficulty: string }) {
-  const params = new URLSearchParams({
-    section: filters.section,
-  })
+async function requestQuestion(filters: { section: string; domain: string; skill: string; difficulty: string } | { id: string }) {
+  const params = new URLSearchParams()
 
-  if (filters.domain !== "any") {
-    params.set("domain", filters.domain)
-  }
+  if ("id" in filters) {
+    params.set("id", filters.id)
+  } else {
+    params.set("section", filters.section)
 
-  if (filters.skill !== "any") {
-    params.set("skill", filters.skill)
-  }
+    if (filters.domain !== "any") {
+      params.set("domain", filters.domain)
+    }
 
-  if (filters.difficulty !== "any") {
-    params.set("difficulty", filters.difficulty)
+    if (filters.skill !== "any") {
+      params.set("skill", filters.skill)
+    }
+
+    if (filters.difficulty !== "any") {
+      params.set("difficulty", filters.difficulty)
+    }
   }
 
   const response = await fetch(`/api/question?${params.toString()}`, { cache: "no-store" })
@@ -35,7 +41,43 @@ async function requestQuestion(filters: { section: string; domain: string; skill
     throw new Error(data.error ?? "Could not load question")
   }
 
+  if (!data.question.externalid || !data.question.stem) {
+    throw new Error("Question data is incomplete")
+  }
+
   return data.question
+}
+
+function normalizeResponse(value: string) {
+  return value.trim().toLowerCase().replaceAll(/\s+/g, "")
+}
+
+function parseComparableNumber(value: string) {
+  const sanitized = value.trim().replaceAll(",", "")
+  if (!sanitized) {
+    return null
+  }
+
+  if (/^[+-]?\d+\/[+-]?\d+$/.test(sanitized)) {
+    const [numerator, denominator] = sanitized.split("/").map(Number)
+    if (denominator === 0) {
+      return null
+    }
+    return numerator / denominator
+  }
+
+  const parsed = Number(sanitized)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function responsesMatch(input: string, expected: string) {
+  if (normalizeResponse(input) === normalizeResponse(expected)) {
+    return true
+  }
+
+  const left = parseComparableNumber(input)
+  const right = parseComparableNumber(expected)
+  return left !== null && right !== null && Math.abs(left - right) < 1e-9
 }
 
 function filtersAreEqual(left: QuizFilters, right: QuizFilters) {
@@ -53,6 +95,8 @@ type QuizAppProps = {
 }
 
 export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
+  const router = useRouter()
+  const pathname = usePathname()
   const [question, setQuestion] = useState<CollegeBoardQuestion | null>(initialQuestion)
   const [section, setSection] = useState<QuizSection>(initialFilters.section)
   const [domain, setDomain] = useState<string>(initialFilters.domain)
@@ -64,7 +108,10 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
   const [error, setError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(false)
   const [hydrated, setHydrated] = useState(false)
+  const [questionProgressReady, setQuestionProgressReady] = useState(false)
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle")
   const saveTimeoutRef = useRef<number | null>(null)
+  const restoredQuestionIdRef = useRef<string | null>(null)
 
   const availableDomains = useMemo(() => DOMAIN_OPTIONS[section], [section])
   const availableSkills = useMemo(() => {
@@ -76,6 +123,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     const root = document.documentElement
     root.classList.toggle("dark", darkMode)
     window.localStorage.setItem("theme", darkMode ? "dark" : "light")
+    document.cookie = `theme=${darkMode ? "dark" : "light"}; path=/; max-age=31536000; samesite=lax`
     setIsDark(darkMode)
   }
 
@@ -86,9 +134,14 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
 
     try {
       const nextQuestion = await requestQuestion(active)
+      setQuestionProgressReady(false)
       setQuestion(nextQuestion)
       setSelectedChoice("")
       setCheckState("idle")
+      const nextPath = getQuestionPath(nextQuestion.externalid)
+      if (pathname !== nextPath) {
+        router.push(nextPath, { scroll: false })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unexpected error")
     } finally {
@@ -97,10 +150,44 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
   }
 
   useEffect(() => {
+    setQuestionProgressReady(false)
+    setQuestion(initialQuestion)
+    setSection(initialFilters.section)
+    setDomain(initialFilters.domain)
+    setSkill(initialFilters.skill)
+    setDifficulty(initialFilters.difficulty)
+    setSelectedChoice("")
+    setCheckState("idle")
+    setError(null)
+  }, [initialFilters, initialQuestion])
+
+  useEffect(() => {
+    if (!hydrated || !question) {
+      return
+    }
+
+    const savedProgress = loadQuestionProgress(question.externalid)
+    restoredQuestionIdRef.current = question.externalid
+
+    if (!savedProgress) {
+      setSelectedChoice("")
+      setCheckState("idle")
+      setQuestionProgressReady(true)
+      return
+    }
+
+    setSelectedChoice(savedProgress.selectedChoice)
+    setCheckState(savedProgress.checkState)
+    setQuestionProgressReady(true)
+  }, [hydrated, question])
+
+  useEffect(() => {
     const storedTheme = window.localStorage.getItem("theme")
     const initialDark =
       storedTheme === "dark" ||
-      (storedTheme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches)
+      (storedTheme !== "light" &&
+        (document.documentElement.classList.contains("dark") ||
+          window.matchMedia("(prefers-color-scheme: dark)").matches))
     applyTheme(initialDark)
 
     const persisted = loadQuizPreferences()
@@ -125,7 +212,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
       setDifficulty(nextFilters.difficulty)
     })
 
-    if (filtersAreEqual(nextFilters, initialFilters)) {
+    if (pathname !== "/" || filtersAreEqual(nextFilters, initialFilters)) {
       setHydrated(true)
       return
     }
@@ -133,10 +220,12 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     setLoading(true)
     requestQuestion(nextFilters)
       .then((nextQuestion) => {
+        setQuestionProgressReady(false)
         setQuestion(nextQuestion)
         setSelectedChoice("")
         setCheckState("idle")
         setError(null)
+        router.replace(getQuestionPath(nextQuestion.externalid), { scroll: false })
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Unexpected error")
@@ -145,7 +234,19 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         setLoading(false)
         setHydrated(true)
       })
-  }, [initialFilters])
+  }, [initialFilters, pathname, router])
+
+  useEffect(() => {
+    setCopyStatus("idle")
+  }, [question])
+
+  useEffect(() => {
+    if (!hydrated || pathname !== "/" || !question) {
+      return
+    }
+
+    router.replace(getQuestionPath(question.externalid), { scroll: false })
+  }, [hydrated, pathname, question, router])
 
   useEffect(() => {
     if (!hydrated) {
@@ -174,6 +275,21 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     }
   }, [section, domain, skill, difficulty, isDark, hydrated])
 
+  useEffect(() => {
+    if (!hydrated || !question || !questionProgressReady) {
+      return
+    }
+
+    if (restoredQuestionIdRef.current !== question.externalid) {
+      return
+    }
+
+    saveQuestionProgress(question.externalid, {
+      selectedChoice,
+      checkState,
+    })
+  }, [hydrated, question, questionProgressReady, selectedChoice, checkState])
+
   const choices = useMemo(() => {
     if (!question || !question.answerOptions) return []
     return question.answerOptions.map((option, index) => ({
@@ -182,6 +298,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
       id: option.id
     }))
   }, [question])
+  const isMultipleChoice = choices.length > 0
 
   const filterState: QuizFilters = {
     section,
@@ -207,8 +324,24 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
       return
     }
 
-    const isCorrect = question.keys.includes(selectedChoice)
+    const isCorrect = isMultipleChoice
+      ? question.keys.includes(selectedChoice)
+      : [...question.correct_answer, ...question.keys].some((answer) => responsesMatch(selectedChoice, answer))
+
     setCheckState(isCorrect ? "correct" : "incorrect")
+  }
+
+  const copyQuestionUrl = async () => {
+    if (!question) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(new URL(getQuestionPath(question.externalid), window.location.origin).toString())
+      setCopyStatus("copied")
+    } catch {
+      setCopyStatus("error")
+    }
   }
 
   const shuffleFiltersAndQuestion = async () => {
@@ -243,9 +376,16 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
               Questions come from the Bluebook question bank.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => applyTheme(!isDark)}>
-            Switch to {isDark ? "light" : "dark"} theme
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {question && (
+              <Button variant="outline" size="sm" onClick={copyQuestionUrl}>
+                {copyStatus === "copied" ? "Copied Link" : copyStatus === "error" ? "Copy Failed" : "Copy Question URL"}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => applyTheme(!isDark)}>
+              Switch to {isDark ? "light" : "dark"} theme
+            </Button>
+          </div>
         </div>
       </CardHeader>
 
@@ -279,27 +419,50 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
               />
             </div>
 
-            <div className="space-y-2">
-              {choices.map((choice) => {
-                const selected = selectedChoice === choice.id
-                return (
-                  <button
-                    key={choice.id}
-                    type="button"
-                    onClick={() => setSelectedChoice(choice.id)}
-                    disabled={checkState !== "idle"}
-                    className={`w-full cursor-pointer rounded-lg border px-3 py-2 text-left transition ${
-                      selected
-                        ? "border-sky-500 bg-sky-50 dark:border-sky-400 dark:bg-sky-900/40"
-                        : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
-                    } ${checkState !== "idle" ? "opacity-85" : ""}`}
-                  >
-                    <span className="mr-2 font-semibold">{choice.letter}.</span>
-                    <span className="text-slate-900 dark:text-slate-100" dangerouslySetInnerHTML={{ __html: choice.text }} />
-                  </button>
-                )
-              })}
-            </div>
+            {isMultipleChoice ? (
+              <div className="space-y-2">
+                {choices.map((choice) => {
+                  const selected = selectedChoice === choice.id
+                  return (
+                    <button
+                      key={choice.id}
+                      type="button"
+                      onClick={() => setSelectedChoice(choice.id)}
+                      disabled={checkState !== "idle"}
+                      className={`w-full cursor-pointer rounded-lg border px-3 py-2 text-left transition ${
+                        selected
+                          ? "border-sky-500 bg-sky-50 dark:border-sky-400 dark:bg-sky-900/40"
+                          : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+                      } ${checkState !== "idle" ? "opacity-85" : ""}`}
+                    >
+                      <span className="mr-2 font-semibold">{choice.letter}.</span>
+                      <span className="text-slate-900 dark:text-slate-100" dangerouslySetInnerHTML={{ __html: choice.text }} />
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="student-answer">
+                  Enter your answer
+                </label>
+                <input
+                  id="student-answer"
+                  type="text"
+                  value={selectedChoice}
+                  onChange={(event) => setSelectedChoice(event.target.value)}
+                  disabled={checkState !== "idle"}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-3 focus:ring-sky-500/20 disabled:cursor-not-allowed disabled:opacity-85 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  placeholder="Type your answer"
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Use the exact value the question expects unless it says to round.
+                </p>
+              </div>
+            )}
 
             {checkState === "correct" && (
               <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
@@ -388,11 +551,19 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
             Get Random Question
           </Button>
           {checkState === "idle" ? (
-            <Button onClick={checkAnswer} disabled={!selectedChoice || loading || !!error}>
+            <Button
+              onClick={checkAnswer}
+              disabled={!hydrated || !questionProgressReady || !selectedChoice || loading || !!error}
+              suppressHydrationWarning
+            >
               Check My Answer
             </Button>
           ) : (
-            <Button onClick={() => fetchRandomQuestion(filterState)} disabled={loading}>
+            <Button
+              onClick={() => fetchRandomQuestion(filterState)}
+              disabled={!hydrated || !questionProgressReady || loading}
+              suppressHydrationWarning
+            >
               Next Question
             </Button>
           )}

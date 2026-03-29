@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { getSiteUrl, siteConfig } from "@/lib/site";
@@ -44,30 +45,21 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies()
+  const theme = cookieStore.get("theme")?.value
+
   return (
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans")}
+      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", theme === "dark" && "dark")}
     >
       <body className="min-h-full flex flex-col">
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(() => {
-  try {
-    const storedTheme = window.localStorage.getItem("theme")
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-    const shouldUseDark = storedTheme === "dark" || (storedTheme !== "light" && prefersDark)
-    document.documentElement.classList.toggle("dark", shouldUseDark)
-  } catch {}
-})()`,
-          }}
-        />
         {children}
       </body>
     </html>

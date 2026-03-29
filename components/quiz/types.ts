@@ -45,3 +45,8 @@ export type QuizFilters = {
 export type PersistedQuizPreferences = QuizFilters & {
   isDark: boolean
 }
+
+export type PersistedQuestionProgress = {
+  selectedChoice: string
+  checkState: CheckState
+}

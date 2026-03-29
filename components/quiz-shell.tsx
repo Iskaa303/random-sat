@@ -1,23 +1,21 @@
 import { QuizApp } from "@/components/quiz-app"
-import { getRandomCollegeBoardQuestion } from "@/lib/collegeboard"
+import { getCollegeBoardQuestionById, getCollegeBoardQuestionMetadataById, getRandomCollegeBoardQuestion } from "@/lib/collegeboard"
+import { DEFAULT_FILTERS, getFiltersFromMetadata } from "@/lib/quiz"
 
-export async function QuizShell() {
-  const initialQuestion = await getRandomCollegeBoardQuestion({
-    section: "english",
-    domain: "any",
-    skill: "any",
-    difficulty: "any",
-  })
+type QuizShellProps = {
+  initialQuestionId?: string
+}
+
+export async function QuizShell({ initialQuestionId }: QuizShellProps = {}) {
+  const initialQuestion = initialQuestionId
+    ? await getCollegeBoardQuestionById(initialQuestionId)
+    : await getRandomCollegeBoardQuestion(DEFAULT_FILTERS)
+  const metadata = initialQuestionId ? await getCollegeBoardQuestionMetadataById(initialQuestionId) : null
 
   return (
     <QuizApp
       initialQuestion={initialQuestion}
-      initialFilters={{
-        section: "english",
-        domain: "any",
-        skill: "any",
-        difficulty: "any",
-      }}
+      initialFilters={metadata ? getFiltersFromMetadata(metadata) : DEFAULT_FILTERS}
     />
   )
 }

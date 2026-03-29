@@ -1,4 +1,5 @@
 export const QUIZ_STORAGE_KEY = "bluebook-quiz-state-v1"
+export const QUESTION_PROGRESS_STORAGE_KEY = "bluebook-question-progress-v1"
 
 export const SECTION_OPTIONS = [
   { value: "english", label: "English" },
