@@ -1,30 +1,38 @@
-import { getRandomOpenSatQuestion } from "@/lib/opensat"
-import { Hono } from "hono"
-import { handle } from "hono/vercel"
+import { getRandomCollegeBoardQuestion } from "@/lib/collegeboard"
 
-const app = new Hono()
-
-app.get("*", async (c) => {
+export async function GET(request: Request) {
   try {
-    const section = c.req.query("section") ?? "english"
-    const domain = c.req.query("domain") ?? "any"
-    const limitQuery = c.req.query("limit")
-    const parsedLimit = limitQuery ? Number(limitQuery) : undefined
-    const limit = parsedLimit !== undefined && Number.isFinite(parsedLimit) ? parsedLimit : undefined
+    const { searchParams } = new URL(request.url)
+    const section = searchParams.get("section") ?? "english"
+    const domain = searchParams.get("domain") ?? "any"
+    const skill = searchParams.get("skill") ?? "any"
+    const difficulty = searchParams.get("difficulty") ?? "any"
 
-    const question = await getRandomOpenSatQuestion({
+    const question = await getRandomCollegeBoardQuestion({
       section,
       domain,
-      limit,
+      skill,
+      difficulty,
     })
 
-    c.header("Cache-Control", "no-store")
-    return c.json({ question })
+    return Response.json(
+      { question },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    )
   } catch (error) {
-    console.error("Failed to load OpenSAT question:", error)
-    c.header("Cache-Control", "no-store")
-    return c.json({ error: "Unable to load a quiz question right now." }, 500)
+    console.error("Failed to load College Board question:", error)
+    return Response.json(
+      { error: "Unable to load a quiz question right now." },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    )
   }
-})
-
-export const GET = handle(app)
+}
