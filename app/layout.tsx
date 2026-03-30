@@ -4,6 +4,8 @@ import { cookies } from "next/headers";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { getSiteUrl, siteConfig } from "@/lib/site";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -61,6 +63,8 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
