@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { cookies } from "next/headers";
+import { Geist } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { getSiteUrl, siteConfig } from "@/lib/site";
@@ -10,12 +9,9 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 const geistSans = Geist({
   variable: "--font-sans",
   subsets: ["latin"],
+  preload: false,
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
@@ -47,24 +43,26 @@ export const metadata: Metadata = {
   },
 }
 
-export default async function RootLayout({
+const themeInitScript = `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})();`
+
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const cookieStore = await cookies()
-  const theme = cookieStore.get("theme")?.value
+  const shouldEnableVercelInsights = process.env.NODE_ENV === "production" && process.env.VERCEL === "1"
 
   return (
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", theme === "dark" && "dark")}
+      className={cn("h-full", "antialiased", geistSans.variable, "font-sans")}
     >
       <body className="min-h-full flex flex-col">
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         {children}
-        <Analytics />
-        <SpeedInsights />
+        {shouldEnableVercelInsights && <Analytics />}
+        {shouldEnableVercelInsights && <SpeedInsights />}
       </body>
     </html>
   );

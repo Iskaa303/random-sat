@@ -34,6 +34,10 @@ function loadAllQuestionProgress(): Record<string, PersistedQuestionProgress> {
   }
 }
 
+export function loadQuestionProgressMap(): Record<string, PersistedQuestionProgress> {
+  return loadAllQuestionProgress()
+}
+
 export function loadQuestionProgress(questionId: string): PersistedQuestionProgress | null {
   const allProgress = loadAllQuestionProgress()
   return allProgress[questionId] ?? null

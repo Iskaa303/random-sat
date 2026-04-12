@@ -1,19 +1,23 @@
 "use client"
 
-import { startTransition, useEffect, useMemo, useRef, useState } from "react"
+import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname } from "next/navigation"
 
 import { DIFFICULTY_OPTIONS, DOMAIN_OPTIONS, SECTION_OPTIONS, SKILL_OPTIONS } from "@/components/quiz/constants"
 import {
   clearQuestionProgress,
   loadQuestionProgress,
+  loadQuestionProgressMap,
   loadQuizPreferences,
   saveQuestionProgress,
   saveQuizPreferences,
 } from "@/components/quiz/storage"
 import type { CheckState, CollegeBoardQuestion, QuizFilters, QuizSection } from "@/components/quiz/types"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
 import { getQuestionPath } from "@/lib/quiz"
 
 async function requestQuestion(filters: { section: string; domain: string; skill: string; difficulty: string } | { id: string }) {
@@ -105,16 +109,123 @@ type QuestionBrowserEntry = {
   difficulty: string
 }
 
+type QuestionBrowserListProps = {
+  questions: QuestionBrowserEntry[]
+  currentQuestionId?: string
+  outcomes: Record<string, "correct" | "incorrect">
+  maxHeightClass: string
+  onSelectQuestion: (questionId: string) => void
+}
+
 const difficultyStyles: Record<string, string> = {
-  E: "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/20 dark:text-emerald-200",
-  M: "border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/20 dark:text-amber-200",
-  H: "border-rose-300 bg-rose-100 text-rose-900 dark:border-rose-500/40 dark:bg-rose-500/20 dark:text-rose-200",
+  E: "border-emerald-300/80 bg-emerald-500/10 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300",
+  M: "border-amber-300/80 bg-amber-500/10 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300",
+  H: "border-rose-300/80 bg-rose-500/10 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-300",
 }
 
 const difficultyLabels: Record<string, string> = {
   E: "Easy",
   M: "Medium",
   H: "Hard",
+}
+
+const QUESTION_BROWSER_ITEM_HEIGHT = 34
+const QUESTION_BROWSER_OVERSCAN = 10
+
+function QuestionBrowserList({
+  questions,
+  currentQuestionId,
+  outcomes,
+  maxHeightClass,
+  onSelectQuestion,
+}: QuestionBrowserListProps) {
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [containerHeight, setContainerHeight] = useState(280)
+
+  useEffect(() => {
+    const element = scrollerRef.current
+    if (!element || typeof ResizeObserver === "undefined") {
+      return
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const nextHeight = entries[0]?.contentRect.height
+      if (typeof nextHeight === "number" && nextHeight > 0) {
+        setContainerHeight(nextHeight)
+      }
+    })
+
+    observer.observe(element)
+
+    return () => observer.disconnect()
+  }, [])
+
+  const totalCount = questions.length
+  const visibleCount = Math.max(1, Math.ceil(containerHeight / QUESTION_BROWSER_ITEM_HEIGHT) + QUESTION_BROWSER_OVERSCAN * 2)
+  const startIndex = Math.max(0, Math.floor(scrollTop / QUESTION_BROWSER_ITEM_HEIGHT) - QUESTION_BROWSER_OVERSCAN)
+  const endIndex = Math.min(totalCount, startIndex + visibleCount)
+  const offsetY = startIndex * QUESTION_BROWSER_ITEM_HEIGHT
+  const totalHeight = totalCount * QUESTION_BROWSER_ITEM_HEIGHT
+  const visibleQuestions = questions.slice(startIndex, endIndex)
+
+  return (
+    <div
+      ref={scrollerRef}
+      className={`${maxHeightClass} overflow-y-auto pr-1`}
+      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+    >
+      <div style={{ height: totalHeight, position: "relative" }}>
+        <div style={{ transform: `translateY(${offsetY}px)` }}>
+          {visibleQuestions.map((item) => {
+            const isActive = item.id === currentQuestionId
+            const outcome = outcomes[item.id]
+            const isCompleted = outcome === "correct" || outcome === "incorrect"
+            const isCorrect = outcome === "correct"
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onSelectQuestion(item.id)}
+                className={`mb-1 flex h-8 w-full cursor-pointer items-center justify-between rounded-md border px-2 py-1 text-left text-xs transition-colors ${
+                  isActive
+                    ? "border-primary/60 bg-primary/10"
+                    : isCompleted
+                      ? isCorrect
+                        ? "border-emerald-500/40 bg-emerald-500/12 hover:bg-emerald-500/20"
+                        : "border-rose-500/40 bg-rose-500/12 hover:bg-rose-500/20"
+                      : "border-border bg-background hover:bg-muted"
+                } ${isCompleted ? isCorrect ? "ring-1 ring-emerald-300/60" : "ring-1 ring-rose-300/60" : ""}`}
+              >
+                <span className="min-w-0 truncate font-medium text-foreground">{item.id}</span>
+                <div className="ml-2 flex shrink-0 items-center gap-1.5">
+                  <Badge
+                    variant="outline"
+                    className={difficultyStyles[item.difficulty] ?? "border-border bg-muted text-muted-foreground"}
+                  >
+                    {difficultyLabels[item.difficulty] ?? item.difficulty}
+                  </Badge>
+                  {isCompleted && (
+                    <Badge
+                      variant="secondary"
+                      className={
+                        isCorrect
+                          ? "bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
+                          : "bg-rose-500/15 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                      }
+                    >
+                      Done
+                    </Badge>
+                  )}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
@@ -128,7 +239,6 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
   const [checkState, setCheckState] = useState<CheckState>("idle")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isDark, setIsDark] = useState(false)
   const [hydrated, setHydrated] = useState(false)
   const [questionProgressReady, setQuestionProgressReady] = useState(false)
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle")
@@ -139,6 +249,12 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const saveTimeoutRef = useRef<number | null>(null)
   const restoredQuestionIdRef = useRef<string | null>(null)
+  const isDarkRef = useRef(false)
+
+  const deferredSection = useDeferredValue(section)
+  const deferredDomain = useDeferredValue(domain)
+  const deferredSkill = useDeferredValue(skill)
+  const deferredDifficulty = useDeferredValue(difficulty)
 
   const availableDomains = useMemo(() => DOMAIN_OPTIONS[section], [section])
   const availableSkills = useMemo(() => {
@@ -146,7 +262,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     return SKILL_OPTIONS[section][domain] || [{ value: "any", label: "Any Skill" }]
   }, [section, domain])
 
-  const updateQuestionPath = (questionId: string) => {
+  const updateQuestionPath = useCallback((questionId: string) => {
     if (typeof window === "undefined") {
       return
     }
@@ -155,17 +271,28 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, "", nextPath)
     }
-  }
+  }, [])
 
-  const applyTheme = (darkMode: boolean) => {
+  const applyTheme = useCallback((darkMode: boolean) => {
     const root = document.documentElement
     root.classList.toggle("dark", darkMode)
     window.localStorage.setItem("theme", darkMode ? "dark" : "light")
-    document.cookie = `theme=${darkMode ? "dark" : "light"}; path=/; max-age=31536000; samesite=lax`
-    setIsDark(darkMode)
-  }
+    isDarkRef.current = darkMode
+  }, [])
 
-  const fetchRandomQuestion = async (filters?: { section: string; domain: string; skill: string; difficulty: string }) => {
+  const toggleTheme = useCallback(() => {
+    const nextDarkMode = !isDarkRef.current
+    applyTheme(nextDarkMode)
+    saveQuizPreferences({
+      section,
+      domain,
+      skill,
+      difficulty,
+      isDark: nextDarkMode,
+    })
+  }, [applyTheme, section, domain, skill, difficulty])
+
+  const fetchRandomQuestion = useCallback(async (filters?: { section: string; domain: string; skill: string; difficulty: string }) => {
     const active = filters ?? { section, domain, skill, difficulty }
     setLoading(true)
     setError(null)
@@ -182,7 +309,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [section, domain, skill, difficulty, updateQuestionPath])
 
   useEffect(() => {
     setQuestionProgressReady(false)
@@ -269,7 +396,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         setLoading(false)
         setHydrated(true)
       })
-  }, [initialFilters, pathname])
+  }, [initialFilters, pathname, applyTheme, updateQuestionPath])
 
   useEffect(() => {
     setCopyStatus("idle")
@@ -300,7 +427,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         domain,
         skill,
         difficulty,
-        isDark,
+        isDark: isDarkRef.current,
       })
     }, 120)
 
@@ -310,7 +437,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         saveTimeoutRef.current = null
       }
     }
-  }, [section, domain, skill, difficulty, isDark, hydrated])
+  }, [section, domain, skill, difficulty, hydrated])
 
   useEffect(() => {
     if (!hydrated || !question || !questionProgressReady) {
@@ -411,19 +538,19 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
 
     const params = new URLSearchParams({
       mode: "browse",
-      section,
+      section: deferredSection,
     })
 
-    if (domain !== "any") {
-      params.set("domain", domain)
+    if (deferredDomain !== "any") {
+      params.set("domain", deferredDomain)
     }
 
-    if (skill !== "any") {
-      params.set("skill", skill)
+    if (deferredSkill !== "any") {
+      params.set("skill", deferredSkill)
     }
 
-    if (difficulty !== "any") {
-      params.set("difficulty", difficulty)
+    if (deferredDifficulty !== "any") {
+      params.set("difficulty", deferredDifficulty)
     }
 
     fetch(`/api/question?${params.toString()}`, { cache: "no-store", signal: controller.signal })
@@ -468,7 +595,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
       })
 
     return () => controller.abort()
-  }, [section, domain, skill, difficulty])
+  }, [deferredSection, deferredDomain, deferredSkill, deferredDifficulty])
 
   useEffect(() => {
     if (!hydrated) {
@@ -476,8 +603,10 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     }
 
     const nextOutcomes: Record<string, "correct" | "incorrect"> = {}
+    const savedProgressById = loadQuestionProgressMap()
+
     for (const item of browserQuestions) {
-      const progress = loadQuestionProgress(item.id)
+      const progress = savedProgressById[item.id]
       if (progress?.checkState === "correct" || progress?.checkState === "incorrect") {
         nextOutcomes[item.id] = progress.checkState
       }
@@ -641,71 +770,42 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
   )
 
   const renderQuestionBrowser = (maxHeightClass: string) => (
-    <Card className="border-slate-200/70 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+    <Card className="border-border bg-card shadow-sm">
       <CardHeader className="space-y-1 pb-3">
-        <CardTitle className="text-base">Question Browser</CardTitle>
-        <p className="text-xs text-slate-600 dark:text-slate-300">{browserQuestions.length} filtered questions</p>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-base">Question Browser</CardTitle>
+          <Badge variant="secondary">{browserQuestions.length}</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">Filtered questions</p>
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
-        {browserLoading && <p className="text-sm text-slate-600 dark:text-slate-300">Loading questions...</p>}
+        {browserLoading && (
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-4/5" />
+          </div>
+        )}
 
         {!browserLoading && browserError && (
           <p className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">{browserError}</p>
         )}
 
         {!browserLoading && !browserError && browserQuestions.length === 0 && (
-          <p className="text-sm text-slate-600 dark:text-slate-300">No questions match this filter combination.</p>
+          <p className="text-sm text-muted-foreground">No questions match this filter combination.</p>
         )}
 
         {!browserLoading && !browserError && browserQuestions.length > 0 && (
-          <div className={`${maxHeightClass} space-y-1 overflow-y-auto pr-1`}>
-            {browserQuestions.map((item) => {
-              const isActive = item.id === question?.externalid
-              const outcome = questionOutcomeById[item.id]
-              const isCompleted = outcome === "correct" || outcome === "incorrect"
-              const isCorrect = outcome === "correct"
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    goToQuestion(item.id)
-                    setMobileMenuOpen(false)
-                  }}
-                  className={`flex w-full cursor-pointer items-center justify-between rounded-md border px-2 py-1.5 text-left text-xs transition-colors ${
-                    isActive
-                      ? "border-sky-500 bg-sky-50 dark:border-sky-400 dark:bg-sky-900/40"
-                      : isCompleted
-                        ? isCorrect
-                          ? "border-emerald-300 bg-emerald-50/80 hover:bg-emerald-100/70 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20"
-                          : "border-rose-300 bg-rose-50/80 hover:bg-rose-100/70 dark:border-rose-500/40 dark:bg-rose-500/10 dark:hover:bg-rose-500/20"
-                        : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
-                  } ${isCompleted ? isCorrect ? "ring-1 ring-emerald-300/70 dark:ring-emerald-500/40" : "ring-1 ring-rose-300/70 dark:ring-rose-500/40" : ""}`}
-                >
-                  <span className="min-w-0 truncate font-medium text-slate-900 dark:text-slate-100">{item.id}</span>
-                  <div className="ml-2 flex shrink-0 items-center gap-1.5">
-                    <span
-                      className={`rounded border px-1.5 py-0.5 text-[11px] font-semibold ${difficultyStyles[item.difficulty] ?? "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-500 dark:bg-slate-700 dark:text-slate-100"}`}
-                    >
-                      {difficultyLabels[item.difficulty] ?? item.difficulty}
-                    </span>
-                    {isCompleted && (
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${
-                          isCorrect
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200"
-                            : "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200"
-                        }`}
-                      >
-                        Done
-                      </span>
-                    )}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+          <QuestionBrowserList
+            questions={browserQuestions}
+            currentQuestionId={question?.externalid}
+            outcomes={questionOutcomeById}
+            maxHeightClass={maxHeightClass}
+            onSelectQuestion={(questionId) => {
+              goToQuestion(questionId)
+              setMobileMenuOpen(false)
+            }}
+          />
         )}
       </CardContent>
     </Card>
@@ -713,12 +813,16 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
 
   return (
     <div className="flex flex-col gap-4 pb-24 pt-16 lg:flex-row lg:items-start lg:pb-0 lg:pt-0">
-      <Card className="mb-6 w-full border-slate-200/70 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900 lg:order-2 lg:mb-0">
-        <CardHeader className="space-y-2">
+      <Card className="mb-6 w-full border-border bg-card lg:order-2 lg:mb-0">
+        <CardHeader className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">SAT Practice</Badge>
+              {question && <Badge variant="outline">{question.externalid}</Badge>}
+            </div>
             <CardTitle>Practice one SAT question at a time</CardTitle>
-            <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+            <p className="text-sm leading-relaxed text-muted-foreground">
               Questions come from the Bluebook question bank.
             </p>
           </div>
@@ -729,20 +833,22 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
                   {copyStatus === "copied" ? "Copied Link" : copyStatus === "error" ? "Copy Failed" : "Copy Question URL"}
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={() => applyTheme(!isDark)}>
-                Switch to {isDark ? "light" : "dark"} theme
+              <Button variant="outline" size="sm" onClick={toggleTheme}>
+                Toggle theme
               </Button>
             </div>
           </div>
         </div>
         </CardHeader>
 
-        <CardContent className="space-y-5">
+        <Separator className="opacity-70" />
+
+        <CardContent className="space-y-5 pt-5 pb-6 lg:pb-5">
         {loading && (
-          <div className="space-y-3 animate-pulse">
-            <div className="h-4 w-2/3 rounded-md bg-muted" />
-            <div className="h-4 w-full rounded-md bg-muted" />
-            <div className="h-4 w-5/6 rounded-md bg-muted" />
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-5 w-full" />
+            <Skeleton className="h-5 w-5/6" />
           </div>
         )}
 
@@ -757,12 +863,12 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
             <div className="space-y-2">
               {question.stimulus && (
                 <div
-                  className="block text-sm leading-relaxed text-slate-700 dark:text-slate-300 mb-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg [&_p]:mb-2 [&_p]:last:mb-0"
+                  className="mb-4 block rounded-lg border border-border bg-muted p-4 text-sm leading-relaxed text-muted-foreground [&_p]:mb-2 [&_p]:last:mb-0"
                   dangerouslySetInnerHTML={{ __html: question.stimulus }}
                 />
               )}
               <div
-                className="block text-base leading-relaxed font-medium text-slate-900 dark:text-slate-100 [&_p]:mb-3 [&_p]:last:mb-0"
+                className="block text-base leading-relaxed font-medium text-foreground [&_p]:mb-3 [&_p]:last:mb-0"
                 dangerouslySetInnerHTML={{ __html: question.stem }}
               />
             </div>
@@ -777,21 +883,21 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
                       type="button"
                       onClick={() => setSelectedChoice(choice.id)}
                       disabled={checkState !== "idle"}
-                      className={`w-full cursor-pointer rounded-lg border px-3 py-2 text-left transition ${
+                      className={`w-full cursor-pointer rounded-lg border px-3 py-2 text-left transition-colors duration-150 ${
                         selected
-                          ? "border-sky-500 bg-sky-50 dark:border-sky-400 dark:bg-sky-900/40"
-                          : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800"
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-background hover:bg-muted"
                       } ${checkState !== "idle" ? "opacity-85" : ""}`}
                     >
                       <span className="mr-2 font-semibold">{choice.letter}.</span>
-                      <span className="text-slate-900 dark:text-slate-100" dangerouslySetInnerHTML={{ __html: choice.text }} />
+                      <span className="text-foreground" dangerouslySetInnerHTML={{ __html: choice.text }} />
                     </button>
                   )
                 })}
               </div>
             ) : (
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="student-answer">
+                <label className="block text-sm font-medium text-foreground" htmlFor="student-answer">
                   Enter your answer
                 </label>
                 <input
@@ -803,26 +909,26 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
                   inputMode="decimal"
                   autoComplete="off"
                   spellCheck={false}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-sky-500 focus:ring-3 focus:ring-sky-500/20 disabled:cursor-not-allowed disabled:opacity-85 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-foreground outline-none transition focus:border-primary/70 focus:ring-3 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-85"
                   placeholder="Type your answer"
                 />
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-muted-foreground">
                   Use the exact value the question expects unless it says to round.
                 </p>
               </div>
             )}
 
             {checkState === "correct" && (
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">
                 Correct. Nice work.
               </div>
             )}
 
             {checkState === "incorrect" && (
-              <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-300">
+              <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">
                 <p>Not quite. Review the explanation and then continue.</p>
                 <div
-                  className="block leading-relaxed text-slate-900 dark:text-slate-100 [&_p]:mb-3 [&_p]:last:mb-0 [&_strong]:font-semibold"
+                  className="block leading-relaxed text-foreground [&_p]:mb-3 [&_p]:last:mb-0 [&_strong]:font-semibold"
                   dangerouslySetInnerHTML={{ __html: question.rationale }}
                 />
               </div>
@@ -842,13 +948,13 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
       </aside>
 
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/50 px-3 py-4 lg:hidden" onClick={() => setMobileMenuOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-black/50 px-3 py-4 lg:hidden" onClick={() => setMobileMenuOpen(false)}>
           <div
-            className="mx-auto flex h-full w-full max-w-2xl flex-col gap-3 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            className="mx-auto flex h-full w-full max-w-2xl flex-col gap-3 overflow-hidden rounded-xl border border-border bg-background p-3 shadow-sm"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Menu</p>
+              <p className="text-sm font-semibold text-foreground">Menu</p>
               <Button variant="outline" size="sm" onClick={() => setMobileMenuOpen(false)}>
                 Close
               </Button>
@@ -860,14 +966,14 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
                   {copyStatus === "copied" ? "Copied Link" : copyStatus === "error" ? "Copy Failed" : "Copy Question URL"}
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={() => applyTheme(!isDark)}>
-                Switch to {isDark ? "light" : "dark"} theme
+              <Button variant="outline" size="sm" onClick={toggleTheme}>
+                Toggle theme
               </Button>
             </div>
 
             <div className="space-y-3 overflow-y-auto pr-1">
               {renderQuestionBrowser("max-h-64")}
-              <Card className="border-slate-200/70 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+              <Card className="border-border bg-card shadow-sm">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Filters and Actions</CardTitle>
                 </CardHeader>
@@ -885,7 +991,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         variant="outline"
         size="icon"
         onClick={() => setMobileMenuOpen(true)}
-        className="fixed left-3 top-3 z-40 h-11 w-11 rounded-xl shadow-md lg:hidden"
+        className="fixed left-3 top-3 z-40 size-11 rounded-xl shadow-md lg:hidden"
       >
         <span className="sr-only">Open menu</span>
         <span aria-hidden="true" className="flex flex-col gap-1">
@@ -895,7 +1001,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         </span>
       </Button>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 py-3 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95 lg:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background px-3 py-3 lg:hidden">
         <div className="mx-auto flex w-full max-w-2xl gap-2">
           <Button className="flex-1" variant="outline" onClick={redoCurrentQuestion} disabled={!question || loading}>
             Redo Question

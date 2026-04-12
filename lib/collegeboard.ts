@@ -41,6 +41,7 @@ const API_GET_SINGLE = "https://qbank-api.collegeboard.org/msreportingquestionba
 
 const cachedIds: Map<string, QuestionMetadata[]> = new Map()
 const cachedQuestions: Map<string, CollegeBoardQuestion> = new Map()
+let cachedMetadataIndex: Map<string, QuestionMetadata> | null = null
 const ONE_DAY_IN_SECONDS = 60 * 60 * 24
 const QUESTION_FETCH_RETRY_LIMIT = 3
 
@@ -112,6 +113,7 @@ async function fetchQuestionIds(section: string): Promise<QuestionMetadata[]> {
       },
     })
     const data = await response.json()
+    cachedMetadataIndex = null
     cachedIds.set(section, data)
     return data
   } catch (error) {
@@ -237,12 +239,16 @@ export async function getCollegeBoardQuestionById(externalId: string): Promise<C
 }
 
 export async function getCollegeBoardQuestionMetadataById(externalId: string): Promise<QuestionMetadata | null> {
-  const [englishIds, mathIds] = await Promise.all([
-    getCollegeBoardQuestionIds({ section: "english" }),
-    getCollegeBoardQuestionIds({ section: "math" }),
-  ])
+  if (!cachedMetadataIndex) {
+    const [englishIds, mathIds] = await Promise.all([
+      getCollegeBoardQuestionIds({ section: "english" }),
+      getCollegeBoardQuestionIds({ section: "math" }),
+    ])
 
-  return [...englishIds, ...mathIds].find((id) => id.external_id === externalId) ?? null
+    cachedMetadataIndex = new Map([...englishIds, ...mathIds].map((item) => [item.external_id, item]))
+  }
+
+  return cachedMetadataIndex.get(externalId) ?? null
 }
 
 export async function getAllCollegeBoardQuestionIds(): Promise<QuestionMetadata[]> {
