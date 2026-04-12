@@ -10,7 +10,7 @@ export default async function QuestionPage(props: PageProps<"/[id]">) {
 
     return (
       <main className="min-h-svh bg-slate-50 px-4 py-6 sm:min-h-screen sm:px-6 sm:py-12 dark:bg-slate-950">
-        <div className="mx-auto w-full max-w-2xl">
+        <div className="mx-auto w-full max-w-6xl">
           {shell}
         </div>
       </main>

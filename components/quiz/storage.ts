@@ -48,3 +48,17 @@ export function saveQuestionProgress(questionId: string, progress: PersistedQues
     // Ignore storage failures (private mode, quota, etc.)
   }
 }
+
+export function clearQuestionProgress(questionId: string) {
+  try {
+    const allProgress = loadAllQuestionProgress()
+    if (!(questionId in allProgress)) {
+      return
+    }
+
+    delete allProgress[questionId]
+    window.localStorage.setItem(QUESTION_PROGRESS_STORAGE_KEY, JSON.stringify(allProgress))
+  } catch {
+    // Ignore storage failures (private mode, quota, etc.)
+  }
+}

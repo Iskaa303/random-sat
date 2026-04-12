@@ -155,11 +155,14 @@ async function fetchQuestion(externalId: string): Promise<CollegeBoardQuestion> 
 
 export async function getCollegeBoardQuestionIds(query: CollegeBoardQuery = {}): Promise<QuestionMetadata[]> {
   const section = query.section || "english"
-  const allIds = await fetchQuestionIds(section)
+  const allIds =
+    section === "any"
+      ? [...(await fetchQuestionIds("english")), ...(await fetchQuestionIds("math"))]
+      : await fetchQuestionIds(section)
 
   return allIds.filter(id => {
     // Filter by section (already done in fetch, but ok)
-    if (query.section) {
+    if (query.section && (query.section === "english" || query.section === "math")) {
       const sectionMap: Record<string, string[]> = {
         english: ["INI", "CAS", "EOI", "SEC"],
         math: ["H", "P", "Q", "S"]
