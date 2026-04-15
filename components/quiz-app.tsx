@@ -2,7 +2,6 @@
 
 import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname } from "next/navigation"
-import { motion } from "motion/react"
 
 import { DIFFICULTY_OPTIONS, DOMAIN_OPTIONS, SECTION_OPTIONS, SKILL_OPTIONS } from "@/components/quiz/constants"
 import {
@@ -254,15 +253,11 @@ function QuestionBrowserList({
             const isCorrect = outcome === "correct"
 
             return (
-              <motion.button
+              <button
                 key={item.id}
                 type="button"
                 onClick={() => onSelectQuestion(item.id)}
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.15 }}
-                className={`mb-1 flex h-8 w-full cursor-pointer items-center justify-between rounded-md border px-2 py-1 text-left text-xs transition-colors ${
+                className={`mb-1 flex h-8 w-full cursor-pointer items-center justify-between rounded-md border px-2 py-1 text-left text-xs transition-all duration-150 opacity-animation ${
                   isActive
                     ? "border-primary/60 bg-primary/10"
                     : isCompleted
@@ -293,7 +288,7 @@ function QuestionBrowserList({
                     </Badge>
                   )}
                 </div>
-              </motion.button>
+              </button>
             )
           })}
         </div>
@@ -608,69 +603,74 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
 
   useEffect(() => {
     const controller = new AbortController()
+    // Debounce 300ms to prevent rapid requests from aborting each other when filters change
+    const timeoutId = window.setTimeout(() => {
+      setBrowserLoading(true)
+      setBrowserError(null)
 
-    setBrowserLoading(true)
-    setBrowserError(null)
-
-    const params = new URLSearchParams({
-      mode: "browse",
-      section: deferredSection,
-    })
-
-    if (deferredDomain !== "any") {
-      params.set("domain", deferredDomain)
-    }
-
-    if (deferredSkill !== "any") {
-      params.set("skill", deferredSkill)
-    }
-
-    if (deferredDifficulty !== "any") {
-      params.set("difficulty", deferredDifficulty)
-    }
-
-    fetch(`/api/question?${params.toString()}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          questions?: QuestionBrowserEntry[]
-          error?: string
-        }
-
-        if (!response.ok || !data.questions) {
-          throw new Error(data.error ?? "Could not load question browser")
-        }
-
-        const seenIds = new Set<string>()
-        const sanitizedQuestions = data.questions
-          .map((item) => ({
-            id: typeof item.id === "string" ? item.id.trim() : "",
-            difficulty: typeof item.difficulty === "string" ? item.difficulty : "",
-          }))
-          .filter((item) => {
-            if (!item.id || seenIds.has(item.id)) {
-              return false
-            }
-
-            seenIds.add(item.id)
-            return true
-          })
-
-        setBrowserQuestions(sanitizedQuestions)
-      })
-      .catch((err: unknown) => {
-        if (err instanceof Error && err.name === "AbortError") {
-          return
-        }
-        setBrowserQuestions([])
-        setBrowserError(err instanceof Error ? err.message : "Unexpected error")
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setBrowserLoading(false)
-        }
+      const params = new URLSearchParams({
+        mode: "browse",
+        section: deferredSection,
       })
 
-    return () => controller.abort()
+      if (deferredDomain !== "any") {
+        params.set("domain", deferredDomain)
+      }
+
+      if (deferredSkill !== "any") {
+        params.set("skill", deferredSkill)
+      }
+
+      if (deferredDifficulty !== "any") {
+        params.set("difficulty", deferredDifficulty)
+      }
+
+      fetch(`/api/question?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+        .then(async (response) => {
+          const data = (await response.json()) as {
+            questions?: QuestionBrowserEntry[]
+            error?: string
+          }
+
+          if (!response.ok || !data.questions) {
+            throw new Error(data.error ?? "Could not load question browser")
+          }
+
+          const seenIds = new Set<string>()
+          const sanitizedQuestions = data.questions
+            .map((item) => ({
+              id: typeof item.id === "string" ? item.id.trim() : "",
+              difficulty: typeof item.difficulty === "string" ? item.difficulty : "",
+            }))
+            .filter((item) => {
+              if (!item.id || seenIds.has(item.id)) {
+                return false
+              }
+
+              seenIds.add(item.id)
+              return true
+            })
+
+          setBrowserQuestions(sanitizedQuestions)
+        })
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.name === "AbortError") {
+            return
+          }
+          setBrowserQuestions([])
+          setBrowserError(err instanceof Error ? err.message : "Unexpected error")
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setBrowserLoading(false)
+          }
+        })
+    }, 300)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
   }, [deferredSection, deferredDomain, deferredSkill, deferredDifficulty])
 
   useEffect(() => {
@@ -678,21 +678,26 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
       return
     }
 
-    const nextOutcomes: Record<string, "correct" | "incorrect"> = {}
-    const savedProgressById = loadQuestionProgressMap()
+    // Defer outcome calculation to lower priority (avoid blocking main thread)
+    const timeoutId = window.setTimeout(() => {
+      const nextOutcomes: Record<string, "correct" | "incorrect"> = {}
+      const savedProgressById = loadQuestionProgressMap()
 
-    for (const item of browserQuestions) {
-      const progress = savedProgressById[item.id]
-      if (progress?.checkState === "correct" || progress?.checkState === "incorrect") {
-        nextOutcomes[item.id] = progress.checkState
+      for (const item of browserQuestions) {
+        const progress = savedProgressById[item.id]
+        if (progress?.checkState === "correct" || progress?.checkState === "incorrect") {
+          nextOutcomes[item.id] = progress.checkState
+        }
       }
-    }
 
-    if (question && (checkState === "correct" || checkState === "incorrect")) {
-      nextOutcomes[question.externalid] = checkState
-    }
+      if (question && (checkState === "correct" || checkState === "incorrect")) {
+        nextOutcomes[question.externalid] = checkState
+      }
 
-    setQuestionOutcomeById(nextOutcomes)
+      setQuestionOutcomeById(nextOutcomes)
+    }, 100)
+
+    return () => window.clearTimeout(timeoutId)
   }, [hydrated, browserQuestions, question, checkState])
 
   const goToQuestion = useCallback(async (questionId: string) => {
@@ -1024,16 +1029,16 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
             )}
 
             {checkState === "correct" && (
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">
+              <div className="feedback-animation rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">
                 Correct. Nice work.
               </div>
             )}
 
             {checkState === "incorrect" && (
-              <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">
-                <p>Not quite. Review the explanation and then continue.</p>
+              <div className="feedback-animation space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-800">
+                <p className="explanation-animation block">Not quite. Review the explanation and then continue.</p>
                 <div
-                  className="block leading-relaxed text-foreground [&_p]:mb-3 [&_p]:last:mb-0 [&_strong]:font-semibold"
+                  className="explanation-animation block leading-relaxed text-foreground [&_p]:mb-3 [&_p]:last:mb-0 [&_strong]:font-semibold"
                   dangerouslySetInnerHTML={{ __html: isDark ? transformSvgColorsForDarkTheme(question.rationale) : question.rationale }}
                 />
               </div>

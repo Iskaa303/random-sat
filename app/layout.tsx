@@ -9,7 +9,8 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 const geistSans = Geist({
   variable: "--font-sans",
   subsets: ["latin"],
-  preload: false,
+  preload: true,
+  fallback: ["system-ui", "-apple-system"],
 });
 
 
@@ -58,8 +59,10 @@ export default function RootLayout({
       suppressHydrationWarning
       className={cn("h-full", "antialiased", geistSans.variable, "font-sans")}
     >
-      <body className="min-h-full flex flex-col">
+      <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
+      <body className="min-h-full flex flex-col">
         {children}
         {shouldEnableVercelInsights && <Analytics />}
         {shouldEnableVercelInsights && <SpeedInsights />}
