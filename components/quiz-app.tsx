@@ -2,6 +2,7 @@
 
 import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname } from "next/navigation"
+import { motion } from "motion/react"
 
 import { DIFFICULTY_OPTIONS, DOMAIN_OPTIONS, SECTION_OPTIONS, SKILL_OPTIONS } from "@/components/quiz/constants"
 import {
@@ -208,10 +209,26 @@ function QuestionBrowserList({
       nextScrollTop = Math.max(0, itemBottom - containerHeight + QUESTION_BROWSER_ITEM_HEIGHT)
     }
 
-    scrollerRef.current.scrollTo({
-      top: nextScrollTop,
-      behavior: "smooth",
-    })
+    const startScroll = scrollerRef.current.scrollTop
+    const distance = nextScrollTop - startScroll
+    const startTime = performance.now()
+    const duration = 300
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      const easeOutCubic = 1 - Math.pow(1 - progress, 3)
+      
+      if (scrollerRef.current) {
+        scrollerRef.current.scrollTop = startScroll + distance * easeOutCubic
+      }
+
+      if (progress < 1) {
+        requestAnimationFrame(animate)
+      }
+    }
+
+    requestAnimationFrame(animate)
   }, [currentQuestionId, questions, containerHeight])
 
   const totalCount = questions.length
@@ -237,10 +254,14 @@ function QuestionBrowserList({
             const isCorrect = outcome === "correct"
 
             return (
-              <button
+              <motion.button
                 key={item.id}
                 type="button"
                 onClick={() => onSelectQuestion(item.id)}
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.15 }}
                 className={`mb-1 flex h-8 w-full cursor-pointer items-center justify-between rounded-md border px-2 py-1 text-left text-xs transition-colors ${
                   isActive
                     ? "border-primary/60 bg-primary/10"
@@ -272,7 +293,7 @@ function QuestionBrowserList({
                     </Badge>
                   )}
                 </div>
-              </button>
+              </motion.button>
             )
           })}
         </div>
@@ -674,7 +695,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     setQuestionOutcomeById(nextOutcomes)
   }, [hydrated, browserQuestions, question, checkState])
 
-  const goToQuestion = async (questionId: string) => {
+  const goToQuestion = useCallback(async (questionId: string) => {
     if (question?.externalid === questionId || loading) {
       return
     }
@@ -694,7 +715,30 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [question, loading, updateQuestionPath])
+
+  useEffect(() => {
+    if (!hydrated) {
+      return
+    }
+
+    const handlePopState = async () => {
+      const nextQuestionId = window.location.pathname.slice(1)
+      
+      if (!nextQuestionId || !nextQuestionId.trim()) {
+        return
+      }
+
+      if (question?.externalid === nextQuestionId) {
+        return
+      }
+
+      await goToQuestion(nextQuestionId)
+    }
+
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [hydrated, question, goToQuestion])
 
   useEffect(() => {
     if (!mobileMenuOpen) {
@@ -721,7 +765,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
 
   const renderFilterControls = () => (
     <>
-      <div className="flex flex-wrap gap-2 [content-visibility:auto] [contain-intrinsic-size:42px]">
+      <div className="flex flex-wrap gap-2 pb-3 [content-visibility:auto] [contain-intrinsic-size:42px]">
         {SECTION_OPTIONS.map((option) => (
           <Button
             key={option.value}
@@ -738,7 +782,9 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2 [content-visibility:auto] [contain-intrinsic-size:42px]">
+      <Separator className="opacity-40" />
+
+      <div className="flex flex-wrap gap-2 py-3 [content-visibility:auto] [contain-intrinsic-size:42px]">
         {availableDomains.map((option) => (
           <Button
             key={option.value}
@@ -754,7 +800,9 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2 [content-visibility:auto] [contain-intrinsic-size:42px]">
+      <Separator className="opacity-40" />
+
+      <div className="flex flex-wrap gap-2 py-3 [content-visibility:auto] [contain-intrinsic-size:42px]">
         {availableSkills.map((option) => (
           <Button
             key={option.value}
@@ -767,7 +815,9 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2 [content-visibility:auto] [contain-intrinsic-size:42px]">
+      <Separator className="opacity-40" />
+
+      <div className="flex flex-wrap gap-2 pt-3 [content-visibility:auto] [contain-intrinsic-size:42px]">
         {DIFFICULTY_OPTIONS.map((option) => (
           <Button
             key={option.value}
