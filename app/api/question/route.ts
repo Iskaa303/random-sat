@@ -5,7 +5,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const mode = searchParams.get("mode")
     const id = searchParams.get("id")
-    const section = searchParams.get("section") ?? "english"
+    const section = searchParams.get("section") ?? "any"
     const domain = searchParams.get("domain") ?? "any"
     const skill = searchParams.get("skill") ?? "any"
     const difficulty = searchParams.get("difficulty") ?? "any"

@@ -90,6 +90,28 @@ function responsesMatch(input: string, expected: string) {
   return left !== null && right !== null && Math.abs(left - right) < 1e-9
 }
 
+function transformSvgColorsForDarkTheme(html: string): string {
+  let result = html
+    .replaceAll(/#(?:[fF]{3}|[fF]{6})\b/g, "#192029")
+    .replaceAll(/#231f20\b/g, "#eef2f9")
+    .replaceAll(/#202020\b/g, "#eef2f9")
+    .replaceAll(/#(?:0{3}|0{6})\b/g, "#eef2f9")
+  
+  const shapeElements = ['path', 'circle', 'ellipse', 'rect', 'polygon', 'polyline', 'line']
+  
+  for (const element of shapeElements) {
+    const regex = new RegExp(`<${element}\\s+([^>]*?)(?=>)`, 'g')
+    result = result.replace(regex, (match, attrs) => {
+      if (!attrs.includes('fill=') && !attrs.includes('stroke=')) {
+        return `<${element} ${attrs}fill="#eef2f9"`
+      }
+      return match
+    })
+  }
+  
+  return result
+}
+
 function filtersAreEqual(left: QuizFilters, right: QuizFilters) {
   return (
     left.section === right.section &&
@@ -160,6 +182,37 @@ function QuestionBrowserList({
 
     return () => observer.disconnect()
   }, [])
+
+  useEffect(() => {
+    if (!scrollerRef.current || !currentQuestionId) {
+      return
+    }
+
+    const currentIndex = questions.findIndex((q) => q.id === currentQuestionId)
+    if (currentIndex === -1) {
+      return
+    }
+
+    const itemTop = currentIndex * QUESTION_BROWSER_ITEM_HEIGHT
+    const itemBottom = itemTop + QUESTION_BROWSER_ITEM_HEIGHT
+
+    const scrollerTop = scrollerRef.current.scrollTop
+    const scrollerBottom = scrollerTop + containerHeight
+
+    if (itemTop >= scrollerTop && itemBottom <= scrollerBottom) {
+      return
+    }
+
+    let nextScrollTop = itemTop
+    if (itemBottom > scrollerBottom) {
+      nextScrollTop = Math.max(0, itemBottom - containerHeight + QUESTION_BROWSER_ITEM_HEIGHT)
+    }
+
+    scrollerRef.current.scrollTo({
+      top: nextScrollTop,
+      behavior: "smooth",
+    })
+  }, [currentQuestionId, questions, containerHeight])
 
   const totalCount = questions.length
   const visibleCount = Math.max(1, Math.ceil(containerHeight / QUESTION_BROWSER_ITEM_HEIGHT) + QUESTION_BROWSER_OVERSCAN * 2)
@@ -247,6 +300,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
   const [browserError, setBrowserError] = useState<string | null>(null)
   const [questionOutcomeById, setQuestionOutcomeById] = useState<Record<string, "correct" | "incorrect">>({})
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isDark, setIsDark] = useState(false)
   const saveTimeoutRef = useRef<number | null>(null)
   const restoredQuestionIdRef = useRef<string | null>(null)
   const isDarkRef = useRef(false)
@@ -278,6 +332,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
     root.classList.toggle("dark", darkMode)
     window.localStorage.setItem("theme", darkMode ? "dark" : "light")
     isDarkRef.current = darkMode
+    setIsDark(darkMode)
   }, [])
 
   const toggleTheme = useCallback(() => {
@@ -864,12 +919,12 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
               {question.stimulus && (
                 <div
                   className="mb-4 block rounded-lg border border-border bg-muted p-4 text-sm leading-relaxed text-muted-foreground [&_p]:mb-2 [&_p]:last:mb-0"
-                  dangerouslySetInnerHTML={{ __html: question.stimulus }}
+                  dangerouslySetInnerHTML={{ __html: isDark ? transformSvgColorsForDarkTheme(question.stimulus) : question.stimulus }}
                 />
               )}
               <div
                 className="block text-base leading-relaxed font-medium text-foreground [&_p]:mb-3 [&_p]:last:mb-0"
-                dangerouslySetInnerHTML={{ __html: question.stem }}
+                dangerouslySetInnerHTML={{ __html: isDark ? transformSvgColorsForDarkTheme(question.stem) : question.stem }}
               />
             </div>
 
@@ -890,7 +945,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
                       } ${checkState !== "idle" ? "opacity-85" : ""}`}
                     >
                       <span className="mr-2 font-semibold">{choice.letter}.</span>
-                      <span className="text-foreground" dangerouslySetInnerHTML={{ __html: choice.text }} />
+                      <span className="text-foreground" dangerouslySetInnerHTML={{ __html: isDark ? transformSvgColorsForDarkTheme(choice.text) : choice.text }} />
                     </button>
                   )
                 })}
@@ -929,7 +984,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
                 <p>Not quite. Review the explanation and then continue.</p>
                 <div
                   className="block leading-relaxed text-foreground [&_p]:mb-3 [&_p]:last:mb-0 [&_strong]:font-semibold"
-                  dangerouslySetInnerHTML={{ __html: question.rationale }}
+                  dangerouslySetInnerHTML={{ __html: isDark ? transformSvgColorsForDarkTheme(question.rationale) : question.rationale }}
                 />
               </div>
             )}
@@ -1006,14 +1061,25 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
           <Button className="flex-1" variant="outline" onClick={redoCurrentQuestion} disabled={!question || loading}>
             Redo Question
           </Button>
-          <Button
-            className="flex-1"
-            onClick={checkAnswer}
-            disabled={!hydrated || !questionProgressReady || !selectedChoice || loading || !!error || checkState !== "idle"}
-            suppressHydrationWarning
-          >
-            Check Question
-          </Button>
+          {checkState === "idle" ? (
+            <Button
+              className="flex-1"
+              onClick={checkAnswer}
+              disabled={!hydrated || !questionProgressReady || !selectedChoice || loading || !!error}
+              suppressHydrationWarning
+            >
+              Check Question
+            </Button>
+          ) : (
+            <Button
+              className="flex-1"
+              onClick={() => fetchRandomQuestion(filterState)}
+              disabled={!hydrated || !questionProgressReady || loading}
+              suppressHydrationWarning
+            >
+              Next Question
+            </Button>
+          )}
         </div>
       </div>
     </div>
