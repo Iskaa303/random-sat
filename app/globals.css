@@ -126,12 +126,17 @@
 @layer base {
   * {
     @apply border-border;
+    -webkit-appearance: none;
+    outline: none !important;
+    box-shadow: none !important;
   }
   body {
     @apply bg-background text-foreground;
   }
   html {
     @apply font-sans;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   }
@@ -142,22 +147,38 @@
   }
 
   *::-webkit-scrollbar {
+    display: block;
     width: 10px;
     height: 10px;
   }
 
   *::-webkit-scrollbar-track {
     background: var(--scrollbar-track);
+    border-radius: 0px;
   }
 
   *::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
     border-radius: 999px;
     border: 2px solid var(--scrollbar-track);
+    min-height: 40px;
   }
 
   *::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-hover);
+  }
+
+  button {
+    -webkit-appearance: none;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  button:focus,
+  button:focus-visible,
+  button:focus-within {
+    outline: none !important;
+    box-shadow: none !important;
   }
 }
 

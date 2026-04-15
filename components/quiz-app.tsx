@@ -787,7 +787,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         ))}
       </div>
 
-      <Separator className="opacity-40" />
+      <Separator className="" />
 
       <div className="flex flex-wrap gap-2 py-3 [content-visibility:auto] [contain-intrinsic-size:42px]">
         {availableDomains.map((option) => (
@@ -805,7 +805,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         ))}
       </div>
 
-      <Separator className="opacity-40" />
+      <Separator className="" />
 
       <div className="flex flex-wrap gap-2 py-3 [content-visibility:auto] [contain-intrinsic-size:42px]">
         {availableSkills.map((option) => (
@@ -820,7 +820,7 @@ export function QuizApp({ initialQuestion, initialFilters }: QuizAppProps) {
         ))}
       </div>
 
-      <Separator className="opacity-40" />
+      <Separator className="" />
 
       <div className="flex flex-wrap gap-2 pt-3 [content-visibility:auto] [contain-intrinsic-size:42px]">
         {DIFFICULTY_OPTIONS.map((option) => (
